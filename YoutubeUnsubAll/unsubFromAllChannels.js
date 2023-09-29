@@ -1,64 +1,69 @@
 /** 
-  * My modification of https://www.alphr.com/mass-unsubscribe-youtube/
-  * This script can now unsub from all youtube channels
-  * Youtube bulk unsubscribe fn.
+  * Modified version of https://www.alphr.com/mass-unsubscribe-youtube/
+  * This script now accounts for pagination and can unsubscribe from all YouTube channels.
   * Wrapping this in an IIFE for browser compatibility.
   */
 (async function iife() {
-    // This is the time delay after which the "unsubscribe" button is "clicked"; Tweak to your liking!
-    var UNSUBSCRIBE_DELAY_TIME = 2000;
-  
+    const UNSUBSCRIBE_DELAY_TIME = 2000;
+    const SCROLL_WAIT_TIME = 5000;  // Time to wait after simulating a scroll action for content to load.
+
     function simulateClick(element) {
-      const event = new MouseEvent('click', {
-        'bubbles': true,
-        'cancelable': true,
-        'view': window
-      });
-      element.dispatchEvent(event, true);  // Using capturing phase
+        const event = new MouseEvent('click', {
+            'bubbles': true,
+            'cancelable': true,
+            'view': window
+        });
+        element.dispatchEvent(event, true);  // Using capturing phase
     }
-  
-    /**
-      * Delay runner. Wraps `setTimeout` so it can be `await`ed on. 
-      * @param {Function} fn 
-      * @param {number} delay 
-     */
+
+    function forceScroll() {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+    }
+
     var runAfterDelay = (fn, delay) => new Promise((resolve, reject) => {
-      setTimeout(() => {
-        fn();
-        resolve();
-      }, delay);
+        setTimeout(() => {
+            fn();
+            resolve();
+        }, delay);
     });
-  
-    // Get the channel list; this can be considered a row in the page.
-    var channels = Array.from(document.getElementsByTagName(`ytd-channel-renderer`));
-    console.log(`${channels.length} channels found.`);
-  
-    var ctr = 0;
-    for (const channel of channels) {
-      // Get the unsubscribe button and trigger a "click"
-      const unsubscribeButton = channel.querySelector(`[aria-label^='Unsubscribe from']`);
-      if (unsubscribeButton) {
-        simulateClick(unsubscribeButton);
-        await runAfterDelay(() => {
-          // Get the dialog container...
-          const dialog = document.getElementsByTagName(`yt-confirm-dialog-renderer`)[0];
-          if (dialog) {
-              const confirmButton = dialog.querySelector(`#confirm-button`);
-              if (confirmButton) {
-                  // Try clicking the button itself first
-                  simulateClick(confirmButton);
-          
-                  // Additionally, try clicking child elements
-                  const childElements = confirmButton.querySelectorAll('*');
-                  for (const child of childElements) {
-                      simulateClick(child);
-                  }
-                  console.log(`Unsubscribed ${ctr + 1}/${channels.length}`);
-                  ctr++;
-              }
-          }
-        }, UNSUBSCRIBE_DELAY_TIME);
-      }
-    }
-  })();
-  
+
+    let prevChannelCount = 0;
+    let channels = Array.from(document.getElementsByTagName('ytd-channel-renderer'));
+
+    do {
+        console.log(`${channels.length} channels found.`);
+        
+        let ctr = 0;
+        for (const channel of channels) {
+            const unsubscribeButton = channel.querySelector(`[aria-label^='Unsubscribe from']`);
+            if (unsubscribeButton) {
+                simulateClick(unsubscribeButton);
+                await runAfterDelay(() => {
+                    const dialog = document.getElementsByTagName('yt-confirm-dialog-renderer')[0];
+                    if (dialog) {
+                        const confirmButton = dialog.querySelector('#confirm-button');
+                        if (confirmButton) {
+                            simulateClick(confirmButton);
+                            // Try clicking child elements of the confirmation button
+                            const childElements = confirmButton.querySelectorAll('*');
+                            for (const child of childElements) {
+                                simulateClick(child);
+                            }
+                            console.log(`Unsubscribed ${ctr + 1}/${channels.length}`);
+                            ctr++;
+                        }
+                    }
+                }, UNSUBSCRIBE_DELAY_TIME);
+            }
+        }
+
+        // Force scroll to load more content
+        forceScroll();
+        await runAfterDelay(() => {}, SCROLL_WAIT_TIME);  // Wait for new content to load.
+
+        prevChannelCount = channels.length;
+        channels = Array.from(document.getElementsByTagName('ytd-channel-renderer'));  // Fetch the updated list
+        
+    } while (channels.length !== prevChannelCount);  // Repeat until no new channels are found on the page.
+
+})();
